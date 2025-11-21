@@ -996,8 +996,15 @@ export async function createServer(options: CreateServerOptions = {}) {
 
   // Templates
   app.get("/templates", async (req, res) => {
+    const rawTake = Number(req.query.take);
+    const rawSkip = Number(req.query.skip);
+    const take = Number.isFinite(rawTake) ? Math.min(Math.max(rawTake, 1), 200) : 50;
+    const skip = Number.isFinite(rawSkip) && rawSkip > 0 ? rawSkip : 0;
+
     const list = await prisma.template.findMany({
       orderBy: { updatedAt: "desc" },
+      take,
+      skip,
     });
     res.json(list);
   });
@@ -1067,8 +1074,15 @@ export async function createServer(options: CreateServerOptions = {}) {
 
   // Triggers
   app.get("/triggers", async (req, res) => {
+    const rawTake = Number(req.query.take);
+    const rawSkip = Number(req.query.skip);
+    const take = Number.isFinite(rawTake) ? Math.min(Math.max(rawTake, 1), 200) : 50;
+    const skip = Number.isFinite(rawSkip) && rawSkip > 0 ? rawSkip : 0;
+
     const list = await prisma.trigger.findMany({
       orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+      take,
+      skip,
     });
     res.json(list);
   });
@@ -1121,9 +1135,16 @@ export async function createServer(options: CreateServerOptions = {}) {
 
   // Flows
   app.get("/flows", async (req, res) => {
+    const rawTake = Number(req.query.take);
+    const rawSkip = Number(req.query.skip);
+    const take = Number.isFinite(rawTake) ? Math.min(Math.max(rawTake, 1), 100) : 50;
+    const skip = Number.isFinite(rawSkip) && rawSkip > 0 ? rawSkip : 0;
+
     const list = await prisma.flow.findMany({
       include: { steps: { orderBy: { order: "asc" } } },
       orderBy: { updatedAt: "desc" },
+      take,
+      skip,
     });
     res.json(list);
   });
@@ -1467,86 +1488,49 @@ export async function createServer(options: CreateServerOptions = {}) {
 
   // Timeseries metrics for charts (last 24 hours)
   app.get("/metrics/timeseries", async (req, res) => {
-    const startTime = Date.now();
     const now = new Date();
     const hoursAgo24 = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    // Get messages grouped by hour for last 24 hours
-    // Limit to 10k messages for performance (safety limit: ~7 msgs/min over 24h)
-    const messages = await prisma.message.findMany({
-      where: {
-        createdAt: {
-          gte: hoursAgo24,
-        },
+    const timeseries = await prisma.$queryRaw<
+      Array<{ hour: Date; total: bigint; sent: bigint; received: bigint; failed: bigint }>
+    >`
+      SELECT
+        date_trunc('hour', "createdAt") AS hour,
+        COUNT(*)::bigint as total,
+        SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END)::bigint as sent,
+        SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END)::bigint as received,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::bigint as failed
+      FROM "Message"
+      WHERE "createdAt" >= ${hoursAgo24}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+
+    const statusDistributionRaw = await prisma.$queryRaw<
+      Array<{ status: string; count: bigint }>
+    >`
+      SELECT status, COUNT(*)::bigint as count
+      FROM "Message"
+      WHERE "createdAt" >= ${hoursAgo24}
+      GROUP BY status
+    `;
+
+    const statusDistribution = statusDistributionRaw.reduce(
+      (acc, row) => {
+        acc[row.status] = Number(row.count);
+        return acc;
       },
-      select: {
-        createdAt: true,
-        direction: true,
-        status: true,
-      },
-      orderBy: {
-        createdAt: "asc",
-      },
-      take: 10000, // Limite de segurança: max 10k mensagens nas últimas 24h
-    });
-
-    const queryDuration = Date.now() - startTime;
-    if (queryDuration > 1000) {
-      logger.warn(
-        { duration: queryDuration, messageCount: messages.length },
-        "Timeseries query slow",
-      );
-    }
-
-    // Group by hour
-    const hourlyData: Record<
-      string,
-      { total: number; sent: number; received: number; failed: number }
-    > = {};
-
-    // Initialize all hours in last 24h
-    for (let i = 23; i >= 0; i--) {
-      const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
-      const hourKey = hour.toISOString().slice(0, 13) + ":00:00"; // YYYY-MM-DDTHH:00:00
-      hourlyData[hourKey] = { total: 0, sent: 0, received: 0, failed: 0 };
-    }
-
-    // Count messages per hour
-    messages.forEach((msg) => {
-      const hour = new Date(msg.createdAt);
-      hour.setMinutes(0, 0, 0);
-      const hourKey = hour.toISOString();
-
-      if (hourlyData[hourKey]) {
-        hourlyData[hourKey].total++;
-        if (msg.direction === "outbound") {
-          hourlyData[hourKey].sent++;
-        } else {
-          hourlyData[hourKey].received++;
-        }
-        if (msg.status === "failed") {
-          hourlyData[hourKey].failed++;
-        }
-      }
-    });
-
-    // Convert to array format
-    const timeseries = Object.entries(hourlyData).map(([timestamp, data]) => ({
-      timestamp,
-      ...data,
-    }));
-
-    // Status distribution
-    const statusDistribution = {
-      sent: messages.filter((m) => m.status === "sent").length,
-      delivered: messages.filter((m) => m.status === "delivered").length,
-      read: messages.filter((m) => m.status === "read").length,
-      failed: messages.filter((m) => m.status === "failed").length,
-      queued: messages.filter((m) => m.status === "queued").length,
-    };
+      {} as Record<string, number>,
+    );
 
     res.json({
-      timeseries,
+      timeseries: timeseries.map((row) => ({
+        timestamp: row.hour.toISOString().slice(0, 19),
+        total: Number(row.total ?? 0),
+        sent: Number(row.sent ?? 0),
+        received: Number(row.received ?? 0),
+        failed: Number(row.failed ?? 0),
+      })),
       statusDistribution,
     });
   });
@@ -1581,16 +1565,16 @@ export async function createServer(options: CreateServerOptions = {}) {
     res.json({ success: true, messageId });
   });
 
-  // Broadcast Message
+  // Broadcast Message (chunked to avoid loading all contacts at once)
   app.post("/broadcast", async (req, res) => {
     const schema = z.object({
       text: z.string().min(1),
       contactIds: z.array(z.string()).optional(),
       optedInOnly: z.boolean().default(true),
+      chunkSize: z.number().int().min(50).max(1000).optional(),
     });
     const data = schema.parse(req.body);
 
-    // Get contacts
     const where: any = {};
     if (data.optedInOnly) {
       where.optIn = true;
@@ -1599,22 +1583,41 @@ export async function createServer(options: CreateServerOptions = {}) {
       where.id = { in: data.contactIds };
     }
 
-    const contacts = await prisma.contact.findMany({ where });
-
+    const take = data.chunkSize ?? 500;
+    let cursor: { id: string } | undefined = undefined;
+    let processed = 0;
     const messageIds: string[] = [];
-    for (const contact of contacts) {
-      const messageId = await orchestrator.enqueueMessage(
-        contact.id,
-        contact.phone,
-        data.text,
-        3, // Medium priority for broadcasts
-      );
-      messageIds.push(messageId);
+
+    while (true) {
+      const batch = await prisma.contact.findMany({
+        where,
+        orderBy: { id: "asc" },
+        take,
+        skip: cursor ? 1 : 0,
+        cursor,
+      });
+
+      if (batch.length === 0) break;
+
+      for (const contact of batch) {
+        if (!contact.phone) continue;
+        const messageId = await orchestrator.enqueueMessage(
+          contact.id,
+          contact.phone,
+          data.text,
+          3, // Medium priority for broadcasts
+        );
+        messageIds.push(messageId);
+        processed++;
+      }
+
+      cursor = batch.length > 0 ? { id: batch[batch.length - 1].id } : undefined;
+      if (!cursor) break;
     }
 
     res.json({
       success: true,
-      totalContacts: contacts.length,
+      totalContacts: processed,
       messageIds,
     });
   });
@@ -1930,7 +1933,8 @@ export async function createServer(options: CreateServerOptions = {}) {
   app.get("/messages", async (req, res) => {
     const rawTake = Number(req.query.take);
     const rawSkip = Number(req.query.skip);
-    const hasPagination = !Number.isNaN(rawTake);
+    const take = Number.isFinite(rawTake) ? Math.min(Math.max(rawTake, 1), 200) : 50;
+    const skip = Number.isFinite(rawSkip) && rawSkip > 0 ? rawSkip : 0;
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
     const statusParam = req.query.status;
@@ -1962,31 +1966,22 @@ export async function createServer(options: CreateServerOptions = {}) {
       }
     }
 
-    const take = hasPagination ? Math.max(1, rawTake) : undefined;
-    const skip = hasPagination
-      ? Math.max(0, Number.isNaN(rawSkip) ? 0 : rawSkip)
-      : undefined;
-
     const messages = await prisma.message.findMany({
       where,
       orderBy: { createdAt: "desc" },
       include: {
         contact: true,
       },
-      ...(typeof take === "number" ? { take } : {}),
-      ...(typeof skip === "number" ? { skip } : {}),
+      take,
+      skip,
     });
 
-    if (hasPagination && typeof take === "number" && typeof skip === "number") {
-      const total = await prisma.message.count({ where });
-      return res.json({
-        items: messages,
-        hasMore: skip + messages.length < total,
-        total,
-      });
-    }
-
-    res.json(messages);
+    const total = await prisma.message.count({ where });
+    return res.json({
+      items: messages,
+      hasMore: skip + messages.length < total,
+      total,
+    });
   });
 
   // ==================== Admin Only Endpoints ====================

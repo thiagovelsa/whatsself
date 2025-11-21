@@ -83,6 +83,8 @@ test-results/
 
 # JetBrains (WebStorm, IntelliJ IDEA)
 .idea/
+/.claude/
+/.cursor/
 *.iml
 *.iws
 *.ipr

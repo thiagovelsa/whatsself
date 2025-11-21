@@ -75,8 +75,10 @@ export type SimulateResponse = {
 export const apiService = {
   // ==================== Templates ====================
   templates: {
-    getAll: async (): Promise<Template[]> => {
-      const { data } = await api.get<Template[]>('/templates');
+    getAll: async (params?: { take?: number; skip?: number }): Promise<Template[]> => {
+      const { data } = await api.get<Template[]>('/templates', {
+        params: { take: params?.take ?? 50, skip: params?.skip ?? 0 },
+      });
       return data;
     },
 
@@ -102,8 +104,10 @@ export const apiService = {
 
   // ==================== Triggers ====================
   triggers: {
-    getAll: async (): Promise<Trigger[]> => {
-      const { data } = await api.get<Trigger[]>('/triggers');
+    getAll: async (params?: { take?: number; skip?: number }): Promise<Trigger[]> => {
+      const { data } = await api.get<Trigger[]>('/triggers', {
+        params: { take: params?.take ?? 50, skip: params?.skip ?? 0 },
+      });
       return data;
     },
 
@@ -129,8 +133,10 @@ export const apiService = {
 
   // ==================== Flows ====================
   flows: {
-    getAll: async (): Promise<Flow[]> => {
-      const { data } = await api.get<Flow[]>('/flows');
+    getAll: async (params?: { take?: number; skip?: number }): Promise<Flow[]> => {
+      const { data } = await api.get<Flow[]>('/flows', {
+        params: { take: params?.take ?? 50, skip: params?.skip ?? 0 },
+      });
       return data;
     },
 
@@ -212,8 +218,14 @@ export const apiService = {
 
   // ==================== Messages ====================
   messages: {
-    getAll: async (params?: { take?: number; search?: string }): Promise<Message[]> => {
-      const { data } = await api.get<Message[]>('/messages', { params: params ?? {} });
+    getAll: async (params?: { take?: number; skip?: number; search?: string }): Promise<Message[]> => {
+      const { data } = await api.get<Message[]>('/messages', {
+        params: {
+          take: params?.take ?? 50,
+          skip: params?.skip ?? 0,
+          search: params?.search,
+        },
+      });
       return data;
     },
 
