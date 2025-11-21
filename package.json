@@ -1,0 +1,24 @@
+{
+  "name": "whatself-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WhatsSelf - WhatsApp Business Automation Platform",
+  "scripts": {
+    "dev:backend": "cd apps/backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build:backend": "cd apps/backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "test": "cd apps/backend && npm run test",
+    "test:watch": "cd apps/backend && npm run test:watch",
+    "test:ui": "cd apps/backend && npm run test:ui",
+    "test:coverage": "cd apps/backend && npm run test:coverage",
+    "install:all": "npm install && cd apps/backend && npm install && cd ../.. && cd frontend && npm install",
+    "env:ensure": "node scripts/ensure-env.mjs",
+    "diagnose:whatsapp": "node apps/backend/scripts/diagnose-whatsapp.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

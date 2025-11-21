@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .bg-brand-gradient {
+    background-color: #111315;
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-brand-gradient text-brand-text font-sans antialiased min-h-screen;
+}
+
+#root {
+  @apply min-h-screen;
+}

@@ -1,0 +1,59 @@
+flowchart LR
+  subgraph Operator[Operador e Usuario]
+    U[Browser e Painel Web]
+  end
+
+  subgraph Frontend[Next.js Painel - Fase 2]
+    UI[UI + React Query]
+    SIO[Socket.io-client]
+    UI --- SIO
+  end
+
+  subgraph Backend[API Express Node20 TS]
+    API[Rotas HTTP Zod]
+    DOM[Dominio]
+    TM[Trigger Matcher]
+    FE[Flow Engine]
+    TR[Template Renderer]
+    Q[Fila e Rate Limit e Jitter]
+    CB[Circuit Breaker]
+    API --> DOM
+    DOM --> TM
+    DOM --> FE
+    DOM --> TR
+    DOM --> Q
+    Q --- CB
+  end
+
+  subgraph WhatsApp[whatsapp-web.js]
+    WA[Cliente WhatsApp\nQR, Status, Envio]
+  end
+
+  subgraph Data[Persistencia]
+    Prisma[Prisma Client]
+    DB[(SQLite dev, Postgres prod)]
+  end
+
+  subgraph Observability[Observabilidade]
+    Pino[Pino Logs]
+    Metrics[Metrics prom-client]
+    Prom[Prometheus]
+    Grafana[Grafana]
+    Pino -->|agregador| Logs[(Loki, Elastic, Datadog)]
+    Metrics --> Prom --> Grafana
+  end
+
+  subgraph Scale[Escala - Fase 3]
+    Redis[(Redis)]
+    Bull[BullMQ]
+    Bull --- Redis
+  end
+
+  U -->|HTTPS| UI
+  UI -->|REST| API
+  SIO -.->|Realtime| API
+  Q --> WA -->|Entregas| WhatsAppCloud[(WhatsApp)]
+  API --> Prisma --> DB
+  API --> Pino
+  API --> Metrics
+  Q -. opcional .-> Bull

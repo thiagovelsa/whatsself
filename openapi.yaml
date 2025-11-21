@@ -1,0 +1,948 @@
+openapi: 3.0.3
+info:
+  title: WhatsSelf API
+  version: 1.0.0
+  description: API HTTP do orquestrador WhatsSelf (Express + Prisma + WhatsApp-web.js).
+servers:
+  - url: http://localhost:3001
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      security: []
+      tags: [System]
+      summary: Health check (DB + processo)
+      responses:
+        '200':
+          description: Serviço operacional
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+
+  /qr:
+    get:
+      security: []
+      tags: [System]
+      summary: Último QR Code disponível
+      responses:
+        '200':
+          description: QR atual ou null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qr:
+                    type: string
+                    nullable: true
+
+  /whatsapp/status:
+    get:
+      security: []
+      tags: [System]
+      summary: Status básico do WhatsApp
+      responses:
+        '200':
+          description: Estado de conexão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WhatsappStatus'
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Cria um usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 6 }
+                name: { type: string }
+                role:
+                  type: string
+                  enum: [admin, operator]
+      responses:
+        '201':
+          description: Usuário criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Email duplicado ou payload inválido
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Token válido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Credenciais inválidas
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Usuário autenticado
+      responses:
+        '200':
+          description: Dados do usuário
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Atualiza senha
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [oldPassword, newPassword]
+              properties:
+                oldPassword: { type: string }
+                newPassword: { type: string, minLength: 6 }
+      responses:
+        '200':
+          description: Senha atualizada
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renova sessão e retorna novo token
+      description: >
+        Lê o token JWT do cookie HttpOnly `auth_token` (ou do cabeçalho Authorization)
+        e emite um novo token, desde que o usuário ainda exista e esteja ativo.
+      responses:
+        '200':
+          description: Sessão renovada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Token ausente, inválido ou usuário inativo
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Encerra sessão autenticada
+      description: >
+        Limpa o cookie HttpOnly `auth_token` e invalida a sessão do usuário no cliente.
+      responses:
+        '200':
+          description: Logout realizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /status:
+    get:
+      tags: [System]
+      summary: Status geral (WhatsApp + fila + breaker)
+      responses:
+        '200':
+          description: Status atual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+
+  /queue/status:
+    get:
+      tags: [System]
+      summary: Métricas da fila
+      responses:
+        '200':
+          description: Comprimento e envio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueStatus'
+
+  /circuit-breaker/status:
+    get:
+      tags: [System]
+      summary: Estado do circuit breaker
+      responses:
+        '200':
+          description: Estado atual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CircuitBreakerStatus'
+
+  /circuit-breaker/reset:
+    post:
+      tags: [System]
+      summary: Reseta circuito para CLOSED
+      responses:
+        '200':
+          description: Circuito resetado
+
+  /circuit-breaker/force-open:
+    post:
+      tags: [System]
+      summary: Força estado OPEN
+      responses:
+        '200':
+          description: Circuito aberto manualmente
+
+  /business-hours:
+    get:
+      tags: [System]
+      summary: Horário comercial atual
+      responses:
+        '200':
+          description: Janela configurada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessHours'
+    put:
+      tags: [System]
+      summary: Atualiza horário comercial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessHours'
+      responses:
+        '200':
+          description: Atualizado
+
+  /templates:
+    get:
+      tags: [Templates]
+      summary: Lista templates
+      responses:
+        '200':
+          description: Coleção
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Template'
+    post:
+      tags: [Templates]
+      summary: Cria template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateInput'
+      responses:
+        '201':
+          description: Template criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+
+  /templates/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      tags: [Templates]
+      summary: Busca template
+      responses:
+        '200':
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '404':
+          description: Não encontrado
+    put:
+      tags: [Templates]
+      summary: Atualiza template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateInput'
+      responses:
+        '200':
+          description: Template atualizado
+    delete:
+      tags: [Templates]
+      summary: Remove template
+      responses:
+        '204':
+          description: Removido
+
+  /triggers:
+    get:
+      tags: [Triggers]
+      summary: Lista gatilhos
+      responses:
+        '200':
+          description: Coleção
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trigger'
+    post:
+      tags: [Triggers]
+      summary: Cria gatilho
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerInput'
+      responses:
+        '201':
+          description: Gatilho criado
+
+  /triggers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      tags: [Triggers]
+      summary: Busca gatilho
+      responses:
+        '200':
+          description: Trigger detalhado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trigger'
+    put:
+      tags: [Triggers]
+      summary: Atualiza gatilho
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerInput'
+      responses:
+        '200':
+          description: Atualizado
+    delete:
+      tags: [Triggers]
+      summary: Remove gatilho
+      responses:
+        '204':
+          description: Removido
+
+  /flows:
+    get:
+      tags: [Flows]
+      summary: Lista fluxos (com steps)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Flow'
+    post:
+      tags: [Flows]
+      summary: Cria fluxo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowInput'
+      responses:
+        '201':
+          description: Flow criado
+
+  /flows/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      tags: [Flows]
+      summary: Busca fluxo
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Flow'
+        '404':
+          description: Não encontrado
+    put:
+      tags: [Flows]
+      summary: Atualiza metadados
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                status: { type: string, enum: [draft, published, archived] }
+                version: { type: integer }
+      responses:
+        '200':
+          description: Atualizado
+    delete:
+      tags: [Flows]
+      summary: Remove fluxo
+      responses:
+        '204':
+          description: Removido
+
+  /flows/{id}/publish:
+    post:
+      tags: [Flows]
+      summary: Publica fluxo
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Status alterado para `published`
+
+  /flows/{id}/steps:
+    post:
+      tags: [Flows]
+      summary: Adiciona step
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowStep'
+      responses:
+        '201':
+          description: Step criado
+
+  /flows/{id}/steps/{stepId}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+      - in: path
+        name: stepId
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Flows]
+      summary: Atualiza step
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowStep'
+      responses:
+        '200':
+          description: Step atualizado
+    delete:
+      tags: [Flows]
+      summary: Remove step
+      responses:
+        '204':
+          description: Removido
+
+  /simulate:
+    post:
+      tags: [Flows]
+      summary: Simula texto contra gatilhos/fluxos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, contactId]
+              properties:
+                text: { type: string }
+                contactId: { type: string }
+      responses:
+        '200':
+          description: Resultado da simulação
+
+  /contacts:
+    get:
+      tags: [Contacts]
+      summary: Lista contatos
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [optIn, optOut]
+        - in: query
+          name: take
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: skip
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Lista ou paginação
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Contact'
+                  - $ref: '#/components/schemas/PaginatedContacts'
+
+  /contacts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      tags: [Contacts]
+      summary: Detalha contato
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '404':
+          description: Não encontrado
+
+  /contacts/{id}/flow:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    get:
+      tags: [Contacts]
+      summary: Flow ativo para o contato
+      responses:
+        '200':
+          description: Instância ou null
+    post:
+      operationId: resetFlowDeprecated
+
+  /contacts/{id}/flow/reset:
+    post:
+      tags: [Contacts]
+      summary: Pausa fluxos ativos
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Instâncias pausadas
+
+  /contacts/{id}/flow/pause:
+    post:
+      tags: [Contacts]
+      summary: Alias de reset
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Instâncias pausadas
+
+  /messages:
+    get:
+      tags: [Messages]
+      summary: Lista mensagens
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [queued, sent, delivered, read, failed]
+        - in: query
+          name: direction
+          schema:
+            type: string
+            enum: [inbound, outbound]
+        - in: query
+          name: take
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: skip
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Lista ou paginação
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  - $ref: '#/components/schemas/PaginatedMessages'
+
+  /send:
+    post:
+      tags: [Messages]
+      summary: Enfileira mensagem individual
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: Mensagem enfileirada
+
+  /broadcast:
+    post:
+      tags: [Messages]
+      summary: Broadcast para múltiplos contatos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BroadcastRequest'
+      responses:
+        '200':
+          description: Mensagens enfileiradas
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: Lista usuários (admin only)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+
+  /admin/users/{id}/role:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    put:
+      tags: [Admin]
+      summary: Atualiza role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [admin, operator]
+      responses:
+        '200':
+          description: Role atualizada
+
+  /admin/users/{id}/activate:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags: [Admin]
+      summary: Reativa usuário
+      responses:
+        '200':
+          description: Usuário ativo
+
+  /admin/users/{id}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags: [Admin]
+      summary: Suspende usuário
+      responses:
+        '200':
+          description: Usuário desativado
+
+components:
+  parameters:
+    IdParam:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        role:
+          type: string
+          enum: [admin, operator]
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+    Template:
+      type: object
+      properties:
+        id: { type: string }
+        key: { type: string }
+        content: { type: string }
+        variables:
+          type: array
+          items: { type: string }
+        variants:
+          type: array
+          items: { type: string }
+        locale: { type: string }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TemplateInput:
+      type: object
+      properties:
+        key: { type: string }
+        content: { type: string }
+        variables:
+          type: array
+          items: { type: string }
+        variants:
+          type: array
+          items: { type: string }
+        locale: { type: string }
+        isActive: { type: boolean }
+    Trigger:
+      type: object
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [equals, contains, regex, number]
+        pattern: { type: string }
+        priority: { type: integer }
+        cooldownSec: { type: integer }
+        active: { type: boolean }
+        templateId: { type: string, nullable: true }
+        flowId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TriggerInput:
+      allOf:
+        - $ref: '#/components/schemas/Trigger'
+    Flow:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status:
+          type: string
+          enum: [draft, published, archived]
+        version: { type: integer }
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowStep'
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    FlowStep:
+      type: object
+      properties:
+        id: { type: string }
+        key: { type: string }
+        type:
+          type: string
+          enum: [send_template, collect_input, end]
+        templateId: { type: string, nullable: true }
+        waitInput: { type: boolean }
+        order: { type: integer }
+        transitionsJson:
+          type: object
+          additionalProperties: { type: string }
+    FlowInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        status:
+          type: string
+          enum: [draft, published, archived]
+        version: { type: integer }
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowStep'
+    Contact:
+      type: object
+      properties:
+        id: { type: string }
+        phone: { type: string }
+        name: { type: string, nullable: true }
+        optIn: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        _count:
+          type: object
+          properties:
+            messages: { type: integer }
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        contactId: { type: string }
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        status:
+          type: string
+          enum: [queued, sent, delivered, read, failed]
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SystemStatus:
+      type: object
+      properties:
+        whatsapp:
+          type: object
+          properties:
+            ready: { type: boolean }
+            connected: { type: boolean }
+        queue:
+          type: object
+          properties:
+            length: { type: integer }
+            processing: { type: boolean }
+        circuitBreaker:
+          $ref: '#/components/schemas/CircuitBreakerStatus'
+        rateLimit:
+          type: object
+          properties:
+            sentLastMinute: { type: integer }
+            globalLimit: { type: integer }
+    QueueStatus:
+      type: object
+      properties:
+        queue:
+          type: object
+          properties:
+            length: { type: integer }
+            processing: { type: boolean }
+            oldestMessage:
+              type: string
+              format: date-time
+              nullable: true
+        rateLimit:
+          type: object
+          properties:
+            globalLimit: { type: integer }
+            sentLastMinute: { type: integer }
+            perContactLimit: { type: integer }
+            activeContacts: { type: integer }
+    CircuitBreakerStatus:
+      type: object
+      properties:
+        state:
+          type: string
+          enum: [CLOSED, OPEN, HALF_OPEN]
+        failureRate: { type: number }
+        totalAttempts: { type: integer }
+        openedAt:
+          type: integer
+          nullable: true
+        cooldownMultiplier: { type: number }
+        isAllowed: { type: boolean }
+    BusinessHours:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string, pattern: '^\d{2}:\d{2}$' }
+        end: { type: string, pattern: '^\d{2}:\d{2}$' }
+    SendMessageRequest:
+      type: object
+      required: [phone, text]
+      properties:
+        phone: { type: string }
+        text: { type: string }
+        priority: { type: integer }
+    BroadcastRequest:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        contactIds:
+          type: array
+          items: { type: string }
+        optedInOnly:
+          type: boolean
+          default: true
+    PaginatedContacts:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Contact'
+        hasMore: { type: boolean }
+        total: { type: integer }
+    PaginatedMessages:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        hasMore: { type: boolean }
+        total: { type: integer }
+    WhatsappStatus:
+      type: object
+      properties:
+        ready: { type: boolean }
+        connected: { type: boolean }

@@ -1,0 +1,222 @@
+// Datasource e generator
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Enums
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+enum MessageStatus {
+  queued
+  sent
+  failed
+  delivered
+  read
+}
+
+enum FlowStatus {
+  draft
+  published
+  archived
+}
+
+enum StepType {
+  send_template
+  collect_input
+  end
+}
+
+enum TriggerType {
+  equals
+  contains
+  regex
+  number
+}
+
+enum UserRole {
+  admin
+  operator
+}
+
+// Tabelas principais
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(operator)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Contact {
+  id            String         @id @default(cuid())
+  phone         String         @unique
+  name          String?
+  optIn         Boolean        @default(true)
+  optedOut      Boolean        @default(false)
+  welcomeSent   Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  messages      Message[]
+  flowInstances FlowInstance[]
+
+  @@index([phone])
+  @@index([optedOut, optIn])
+}
+
+model Template {
+  id        String     @id @default(cuid())
+  key       String     @unique
+  content   String     @db.Text // Conteúdo base (pode conter placeholders como {{nome}})
+  variables Json?      @db.JsonB // Lista de variáveis esperadas
+  variants  Json?      @db.JsonB // Variações de texto para humanização
+  locale    String? // pt-BR, en-US...
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  triggers  Trigger[]  @relation("TriggerToTemplate")
+  steps     FlowStep[]
+  messages  Message[]
+}
+
+model Trigger {
+  id          String      @id @default(cuid())
+  type        TriggerType
+  pattern     String
+  priority    Int         @default(0)
+  cooldownSec Int         @default(0)
+  active      Boolean     @default(true)
+  template    Template?   @relation("TriggerToTemplate", fields: [templateId], references: [id])
+  templateId  String?
+  flow        Flow?       @relation("TriggerStartsFlow", fields: [flowId], references: [id])
+  flowId      String?
+  flowAsEntry Flow?       @relation("FlowHasEntryTrigger")
+  messages    Message[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([type, active])
+  @@index([priority])
+}
+
+model Flow {
+  id               String         @id @default(cuid())
+  name             String
+  status           FlowStatus     @default(draft)
+  version          Int            @default(1)
+  schemaJson       Json?          @db.JsonB // Alternativa a steps para armazenar toda a máquina de estados
+  entryTrigger     Trigger?       @relation("FlowHasEntryTrigger", fields: [entryTriggerId], references: [id])
+  entryTriggerId   String?        @unique
+  triggersStarting Trigger[]      @relation("TriggerStartsFlow")
+  steps            FlowStep[]
+  instances        FlowInstance[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model FlowStep {
+  id              String    @id @default(cuid())
+  flow            Flow      @relation(fields: [flowId], references: [id])
+  flowId          String
+  key             String
+  type            StepType
+  template        Template? @relation(fields: [templateId], references: [id])
+  templateId      String?
+  waitInput       Boolean   @default(false)
+  transitionsJson Json?     @db.JsonB // { "1": "proximo_passo", "*": "fallback" }
+  order           Int       @default(0)
+  uiMetadataJson  Json?     @db.JsonB
+}
+
+model FlowInstance {
+  id                String    @id @default(cuid())
+  contact           Contact   @relation(fields: [contactId], references: [id])
+  contactId         String
+  flow              Flow      @relation(fields: [flowId], references: [id])
+  flowId            String
+  currentStepKey    String
+  stateJson         Json?     @db.JsonB
+  lastInteractionAt DateTime  @default(now())
+  paused            Boolean   @default(false)
+  lockedBy          String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  messages          Message[]
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  contact        Contact          @relation(fields: [contactId], references: [id])
+  contactId      String
+  direction      MessageDirection
+  status         MessageStatus
+  whatsappId     String?          @unique
+  content        String           @db.Text
+  trigger        Trigger?         @relation(fields: [triggerId], references: [id])
+  triggerId      String?
+  flowInstance   FlowInstance?    @relation(fields: [flowInstanceId], references: [id])
+  flowInstanceId String?
+  template       Template?        @relation(fields: [templateId], references: [id])
+  templateId     String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([direction])
+  @@index([contactId, createdAt])
+  @@index([flowInstanceId])
+}
+
+model SystemConfig {
+  id                          String   @id @default("global")
+  jwtSecretEncrypted          String?
+  defaultAdminEmail           String
+  defaultAdminPasswordEncrypted String?
+  skipWhatsapp                Boolean  @default(false)
+  puppeteerExecutablePath     String?
+  rateMaxPerMin               Int      @default(12)
+  ratePerContactPer5Min       Int      @default(2)
+  businessHoursStart          String   @default("09:00")
+  businessHoursEnd            String   @default("18:00")
+  timezone                    String   @default("America/Sao_Paulo")
+  wsPort                      Int      @default(3001)
+  wsPath                      String   @default("/socket.io")
+  humanizerMinDelayMs         Int      @default(3000)
+  humanizerMaxDelayMs         Int      @default(7000)
+  humanizerMinTypingMs        Int      @default(1500)
+  humanizerMaxTypingMs        Int      @default(3500)
+  firstContactEnabled         Boolean  @default(false)
+  firstContactMessage         String?
+  cbWindowMode                String   @default("5m_or_50")
+  cbMinAttempts               Int      @default(20)
+  cbFailRateOpen              Float    @default(0.25)
+  cbProbeIntervalSec          Int      @default(45)
+  cbProbeSuccessClose         Float    @default(0.9)
+  cbProbeSamples              Int      @default(10)
+  cbCooldownInitialSec        Int      @default(300)
+  cbCooldownMaxSec            Int      @default(1800)
+  windowsTempDir              String?
+  windowsLongPathSupport      Boolean  @default(true)
+  updatedAt                   DateTime @updatedAt
+  audits                      ConfigAudit[]
+}
+
+model ConfigAudit {
+  id         String       @id @default(cuid())
+  actorUserId String?
+  changes    Json         @db.JsonB
+  createdAt  DateTime     @default(now())
+  config     SystemConfig @relation(fields: [configId], references: [id])
+  configId   String
+}

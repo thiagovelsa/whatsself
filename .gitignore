@@ -1,0 +1,235 @@
+# WhatsSelf - Windows-Optimized .gitignore
+
+# =============================================================================
+# Node.js & Dependencies
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# =============================================================================
+# Environment & Configuration
+# =============================================================================
+.env
+.env.local
+.env.*.local
+.env.production
+!.env.example
+!.env.windows
+
+# =============================================================================
+# Build Outputs
+# =============================================================================
+dist/
+build/
+*.tsbuildinfo
+.cache/
+
+# =============================================================================
+# Database Files
+# =============================================================================
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+!.gitkeep
+
+# Keep only the main database directory structure
+prisma/*.db
+prisma/*.db-journal
+!prisma/.gitkeep
+
+# =============================================================================
+# WhatsApp Session Data
+# =============================================================================
+.wwebjs_auth/
+.wwebjs_cache/
+data/whatsapp_session/
+*.qrcode
+
+# =============================================================================
+# Logs
+# =============================================================================
+logs/
+*.log
+pino-*.log
+combined.log
+error.log
+
+# =============================================================================
+# Testing
+# =============================================================================
+coverage/
+.vitest/
+test-results/
+*.test.db
+
+# =============================================================================
+# IDEs & Editors
+# =============================================================================
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains (WebStorm, IntelliJ IDEA)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# =============================================================================
+# Windows Specific
+# =============================================================================
+# Thumbnails
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+
+# Folder config file
+[Dd]esktop.ini
+
+# Recycle Bin
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# Windows temp files
+~$*
+
+# =============================================================================
+# MacOS (for cross-platform compatibility)
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# =============================================================================
+# Linux (for cross-platform compatibility)
+# =============================================================================
+*~
+.directory
+.Trash-*
+
+# =============================================================================
+# Temporary Files
+# =============================================================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~.nib
+temp/
+tmp/
+*.orig
+%LOCALAPPDATA%/
+apps/backend/%LOCALAPPDATA%/
+
+# =============================================================================
+# Prisma
+# =============================================================================
+.prisma/
+prisma/.env
+prisma/*.db
+prisma/migrations/**/*.db
+
+# =============================================================================
+# TypeScript
+# =============================================================================
+*.tsbuildinfo
+.tscache/
+
+# =============================================================================
+# Backup & Archives
+# =============================================================================
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+backup/
+backups/
+*.backup
+
+# =============================================================================
+# Security & Sensitive Data
+# =============================================================================
+*.pem
+*.key
+*.cert
+*.crt
+secrets/
+credentials/
+.secrets
+
+# =============================================================================
+# Application Specific
+# =============================================================================
+# Custom data directory
+data/*
+!data/.gitkeep
+apps/backend/data/
+!apps/backend/data/.gitkeep
+
+# Upload directory
+uploads/*
+!uploads/.gitkeep
+
+# Session data
+sessions/*
+!sessions/.gitkeep
+
+# =============================================================================
+# CI/CD
+# =============================================================================
+.github/workflows/*.log
+.gitlab-ci.yml.local
+
+# =============================================================================
+# Documentation Build
+# =============================================================================
+docs/_build/
+docs/.doctrees/
+site/
+
+# =============================================================================
+# Misc
+# =============================================================================
+.env.test
+.cache
+.parcel-cache
+.next
+.nuxt
+.vercel
+.serverless/
+.fusebox/
